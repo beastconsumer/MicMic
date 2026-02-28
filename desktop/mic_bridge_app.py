@@ -64,19 +64,19 @@ PREFERRED_CAPTURE_HINTS = (
     "VB-Audio",
 )
 
-COLOR_BG = "#05070D"
-COLOR_SURFACE = "#0B1220"
-COLOR_CARD = "#121A2A"
-COLOR_CARD_ALT = "#0E1729"
-COLOR_BORDER = "#1F2A3D"
-COLOR_TEXT = "#E6ECF7"
-COLOR_MUTED = "#93A4BD"
-COLOR_ACCENT = "#3B82F6"
-COLOR_ACCENT_HOVER = "#2563EB"
+COLOR_BG = "#05060A"
+COLOR_SURFACE = "#0E111A"
+COLOR_CARD = "#131827"
+COLOR_CARD_ALT = "#171F31"
+COLOR_BORDER = "#283247"
+COLOR_TEXT = "#F4F7FF"
+COLOR_MUTED = "#8FA0BC"
+COLOR_ACCENT = "#00B7A8"
+COLOR_ACCENT_HOVER = "#00A093"
 COLOR_OK = "#22C55E"
 COLOR_WARN = "#F59E0B"
 COLOR_ERR = "#EF4444"
-COLOR_INFO = "#60A5FA"
+COLOR_INFO = "#58D6FF"
 
 
 class MicBridgeError(RuntimeError):
@@ -495,8 +495,8 @@ class MicMicApp(ctk.CTk):
         super().__init__()
 
         self.title(APP_TITLE)
-        self.geometry("790x640")
-        self.minsize(730, 560)
+        self.geometry("1020x700")
+        self.minsize(900, 620)
         self.configure(fg_color=COLOR_BG)
 
         self._adb = None
@@ -530,94 +530,178 @@ class MicMicApp(ctk.CTk):
     def _build_ui(self):
         main = ctk.CTkFrame(self, fg_color="transparent")
         main.pack(fill="both", expand=True, padx=18, pady=18)
+        main.grid_rowconfigure(1, weight=1)
+        main.grid_columnconfigure(0, weight=1)
 
-        header = ctk.CTkFrame(
+        hero = ctk.CTkFrame(
             main,
             fg_color=COLOR_SURFACE,
             border_width=1,
             border_color=COLOR_BORDER,
-            corner_radius=16,
+            corner_radius=20,
         )
-        header.pack(fill="x")
-        header.grid_columnconfigure(1, weight=1)
+        hero.grid(row=0, column=0, sticky="ew")
+        hero.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            header,
+            hero,
             text="MM",
-            width=56,
-            height=56,
-            corner_radius=28,
+            width=62,
+            height=62,
+            corner_radius=31,
             fg_color=COLOR_ACCENT,
-            text_color="#F8FAFC",
-            font=ctk.CTkFont(family="Bahnschrift", size=22, weight="bold"),
-        ).grid(row=0, column=0, padx=(14, 12), pady=14)
+            text_color="#03120F",
+            font=ctk.CTkFont(family="Bahnschrift", size=25, weight="bold"),
+        ).grid(row=0, column=0, rowspan=2, padx=(16, 12), pady=16)
 
-        title_wrap = ctk.CTkFrame(header, fg_color="transparent")
-        title_wrap.grid(row=0, column=1, sticky="w")
         ctk.CTkLabel(
-            title_wrap,
-            text="MICMIC",
-            font=ctk.CTkFont(family="Bahnschrift", size=33, weight="bold"),
+            hero,
+            text="MICMIC Desktop",
+            font=ctk.CTkFont(family="Bahnschrift", size=31, weight="bold"),
             text_color=COLOR_TEXT,
-        ).pack(anchor="w")
+        ).grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(14, 2))
+
         ctk.CTkLabel(
-            title_wrap,
-            text="Microfone do celular no Windows com roteamento automatico.",
+            hero,
+            text="Controle profissional de stream USB para Discord e apps de voz.",
             font=ctk.CTkFont(size=13),
             text_color=COLOR_MUTED,
-        ).pack(anchor="w", pady=(1, 0))
+        ).grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 14))
 
         self.header_badge = ctk.CTkLabel(
-            header,
+            hero,
             textvariable=self.status_header,
-            width=96,
-            height=34,
-            corner_radius=17,
-            fg_color="#1E293B",
+            width=110,
+            height=36,
+            corner_radius=18,
+            fg_color="#1A2638",
             text_color=COLOR_TEXT,
             font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.header_badge.grid(row=0, column=2, padx=(10, 14), pady=14, sticky="e")
+        self.header_badge.grid(row=0, column=2, rowspan=2, padx=(10, 16), pady=16, sticky="e")
 
-        body = ctk.CTkFrame(main, fg_color="transparent")
-        body.pack(fill="x", pady=(12, 10))
-        body.grid_columnconfigure(0, weight=3)
-        body.grid_columnconfigure(1, weight=2)
+        content = ctk.CTkFrame(main, fg_color="transparent")
+        content.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        content.grid_columnconfigure(0, weight=2)
+        content.grid_columnconfigure(1, weight=3)
+        content.grid_rowconfigure(0, weight=1)
 
-        card = ctk.CTkFrame(
-            body,
+        left = ctk.CTkFrame(content, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.grid_rowconfigure(3, weight=1)
+
+        status_card = ctk.CTkFrame(
+            left,
             fg_color=COLOR_CARD,
             border_width=1,
             border_color=COLOR_BORDER,
-            corner_radius=14,
+            corner_radius=16,
         )
-        card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        self._status_line(card, "Celular USB", self.status_phone).pack(fill="x", padx=12, pady=(12, 5))
-        self._status_line(card, "Microfone", self.status_mic).pack(fill="x", padx=12, pady=5)
-        self._status_line(card, "Stream", self.status_stream).pack(fill="x", padx=12, pady=(5, 8))
+        status_card.grid(row=0, column=0, sticky="ew")
+        self._status_line(status_card, "Celular USB", self.status_phone).pack(fill="x", padx=12, pady=(12, 6))
+        self._status_line(status_card, "Microfone", self.status_mic).pack(fill="x", padx=12, pady=6)
+        self._status_line(status_card, "Stream", self.status_stream).pack(fill="x", padx=12, pady=(6, 8))
 
         self.discord_hint = ctk.CTkLabel(
-            card,
-            text="Discord: selecione MICMIC (ou Default).",
+            status_card,
+            text="Discord: escolha MICMIC em Entrada de voz.",
             text_color=COLOR_INFO,
             font=ctk.CTkFont(size=13, weight="bold"),
         )
         self.discord_hint.pack(anchor="w", padx=14, pady=(0, 12))
 
-        meter_card = ctk.CTkFrame(
-            body,
+        actions = ctk.CTkFrame(
+            left,
             fg_color=COLOR_CARD,
             border_width=1,
             border_color=COLOR_BORDER,
-            corner_radius=14,
+            corner_radius=16,
         )
-        meter_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        actions.grid(row=1, column=0, sticky="ew", pady=(10, 10))
+        actions.grid_columnconfigure(0, weight=1)
+        actions.grid_columnconfigure(1, weight=1)
+
+        self.btn_start = ctk.CTkButton(
+            actions,
+            text="START",
+            command=self.start_async,
+            height=50,
+            fg_color=COLOR_OK,
+            hover_color="#16A34A",
+            text_color="#04140D",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            corner_radius=12,
+        )
+        self.btn_start.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(12, 8))
+
+        self.btn_stop = ctk.CTkButton(
+            actions,
+            text="STOP",
+            command=self.stop_async,
+            height=46,
+            fg_color=COLOR_ERR,
+            hover_color="#DC2626",
+            text_color="#F8FAFC",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=12,
+            state="disabled",
+        )
+        self.btn_stop.grid(row=1, column=0, sticky="ew", padx=(12, 6), pady=(0, 12))
+
+        self.btn_refresh = ctk.CTkButton(
+            actions,
+            text="Atualizar",
+            command=self.refresh_async,
+            height=46,
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_ACCENT_HOVER,
+            text_color="#03120F",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=12,
+        )
+        self.btn_refresh.grid(row=1, column=1, sticky="ew", padx=(6, 12), pady=(0, 12))
+
+        guide_card = ctk.CTkFrame(
+            left,
+            fg_color=COLOR_CARD_ALT,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=16,
+        )
+        guide_card.grid(row=2, column=0, sticky="ew")
+        ctk.CTkLabel(
+            guide_card,
+            text="Fluxo Rapido",
+            text_color=COLOR_TEXT,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(
+            guide_card,
+            text="1. Conecte USB + depuracao\n2. Clique START no PC\n3. Selecione MICMIC no Discord",
+            justify="left",
+            text_color=COLOR_MUTED,
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=14, pady=(0, 12))
+
+        right = ctk.CTkFrame(content, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        right.grid_rowconfigure(1, weight=1)
+
+        meter_card = ctk.CTkFrame(
+            right,
+            fg_color=COLOR_CARD,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=16,
+        )
+        meter_card.grid(row=0, column=0, sticky="ew")
+
         ctk.CTkLabel(
             meter_card,
-            text="Medidor de Voz",
+            text="Monitor de Voz",
             text_color=COLOR_TEXT,
             font=ctk.CTkFont(size=17, weight="bold"),
-        ).pack(anchor="w", padx=14, pady=(12, 3))
+        ).pack(anchor="w", padx=14, pady=(12, 2))
         ctk.CTkLabel(
             meter_card,
             textvariable=self.status_meter_source,
@@ -627,25 +711,25 @@ class MicMicApp(ctk.CTk):
 
         self.voice_meter_bar = ctk.CTkProgressBar(
             meter_card,
-            height=24,
-            corner_radius=12,
-            fg_color="#1F2937",
+            height=26,
+            corner_radius=13,
+            fg_color="#1A2538",
             progress_color=COLOR_OK,
             border_width=1,
-            border_color="#334155",
+            border_color="#31435F",
         )
         self.voice_meter_bar.pack(fill="x", padx=14)
         self.voice_meter_bar.set(0.0)
 
         meter_stats = ctk.CTkFrame(meter_card, fg_color="transparent")
-        meter_stats.pack(fill="x", padx=14, pady=(10, 12))
+        meter_stats.pack(fill="x", padx=14, pady=(11, 13))
         meter_stats.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
             meter_stats,
             textvariable=self.status_meter_percent,
             text_color=COLOR_TEXT,
-            font=ctk.CTkFont(size=24, weight="bold"),
+            font=ctk.CTkFont(size=27, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
         self.voice_meter_state_label = ctk.CTkLabel(
             meter_stats,
@@ -661,66 +745,17 @@ class MicMicApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
         ).grid(row=1, column=0, columnspan=2, sticky="w")
 
-        actions = ctk.CTkFrame(
-            main,
-            fg_color=COLOR_SURFACE,
-            border_width=1,
-            border_color=COLOR_BORDER,
-            corner_radius=14,
-        )
-        actions.pack(fill="x", pady=(0, 10))
-        actions.grid_columnconfigure(0, weight=1)
-        actions.grid_columnconfigure(1, weight=1)
-        actions.grid_columnconfigure(2, weight=1)
-
-        self.btn_refresh = ctk.CTkButton(
-            actions,
-            text="Atualizar",
-            command=self.refresh_async,
-            height=46,
-            fg_color=COLOR_ACCENT,
-            hover_color=COLOR_ACCENT_HOVER,
-            text_color="#F8FAFC",
-            font=ctk.CTkFont(size=15, weight="bold"),
-        )
-        self.btn_refresh.grid(row=0, column=0, sticky="ew", padx=(12, 6), pady=12)
-
-        self.btn_start = ctk.CTkButton(
-            actions,
-            text="START",
-            command=self.start_async,
-            height=46,
-            fg_color=COLOR_OK,
-            hover_color="#16A34A",
-            text_color="#05270F",
-            font=ctk.CTkFont(size=16, weight="bold"),
-        )
-        self.btn_start.grid(row=0, column=1, sticky="ew", padx=6, pady=12)
-
-        self.btn_stop = ctk.CTkButton(
-            actions,
-            text="STOP",
-            command=self.stop_async,
-            height=46,
-            fg_color=COLOR_ERR,
-            hover_color="#DC2626",
-            text_color="#F8FAFC",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            state="disabled",
-        )
-        self.btn_stop.grid(row=0, column=2, sticky="ew", padx=(6, 12), pady=12)
-
         log_card = ctk.CTkFrame(
-            main,
+            right,
             fg_color=COLOR_SURFACE,
             border_width=1,
             border_color=COLOR_BORDER,
-            corner_radius=14,
+            corner_radius=16,
         )
-        log_card.pack(fill="both", expand=True)
+        log_card.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         ctk.CTkLabel(
             log_card,
-            text="Eventos",
+            text="Console de Eventos",
             text_color=COLOR_TEXT,
             font=ctk.CTkFont(size=14, weight="bold"),
         ).pack(anchor="w", padx=14, pady=(10, 6))
@@ -728,10 +763,10 @@ class MicMicApp(ctk.CTk):
         self.log_box = ctk.CTkTextbox(
             log_card,
             height=230,
-            fg_color="#081123",
+            fg_color="#0A1220",
             text_color=COLOR_TEXT,
             border_width=1,
-            border_color="#2A3A52",
+            border_color="#263853",
             corner_radius=10,
         )
         self.log_box.pack(fill="both", expand=True, padx=12, pady=(0, 12))

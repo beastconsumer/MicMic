@@ -144,47 +144,54 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderConnectionState(state: String) {
-        val (dotColorRes, connectionLabelRes, statusLabelRes, streamingLike) = when (state) {
+        val (dotColorRes, connectionLabelRes, statusLabelRes, statusTextColorRes, streamingLike) = when (state) {
             MicStreamService.STATE_CONNECTED -> StateUi(
                 R.color.status_connected,
                 R.string.connection_connected,
                 R.string.status_recording,
+                R.color.status_connected,
                 true,
             )
             MicStreamService.STATE_CONNECTING -> StateUi(
                 R.color.status_connecting,
                 R.string.connection_connecting,
                 R.string.status_connecting,
+                R.color.status_connecting,
                 true,
             )
             MicStreamService.STATE_RECONNECTING -> StateUi(
                 R.color.status_connecting,
                 R.string.connection_reconnecting,
                 R.string.status_reconnecting,
+                R.color.status_connecting,
                 true,
             )
             MicStreamService.STATE_STOPPED -> StateUi(
                 R.color.status_disconnected,
                 R.string.connection_disconnected,
                 R.string.status_stopped,
+                R.color.text_muted,
                 false,
             )
             MicStreamService.STATE_PERMISSION_DENIED -> StateUi(
                 R.color.status_disconnected,
                 R.string.connection_disconnected,
                 R.string.status_permission_needed,
+                R.color.status_disconnected,
                 false,
             )
             MicStreamService.STATE_ERROR -> StateUi(
                 R.color.status_disconnected,
                 R.string.connection_disconnected,
                 R.string.status_stopped,
+                R.color.status_disconnected,
                 false,
             )
             else -> StateUi(
                 R.color.status_disconnected,
                 R.string.connection_disconnected,
                 R.string.status_ready,
+                R.color.text_muted,
                 false,
             )
         }
@@ -192,9 +199,13 @@ class MainActivity : AppCompatActivity() {
         val dotColor = ContextCompat.getColor(this, dotColorRes)
         connectionDot.backgroundTintList = ColorStateList.valueOf(dotColor)
         connectionText.text = getString(connectionLabelRes)
+        connectionText.setTextColor(dotColor)
         statusText.text = getString(statusLabelRes)
+        statusText.setTextColor(ContextCompat.getColor(this, statusTextColorRes))
         startButton.isEnabled = !streamingLike
         stopButton.isEnabled = streamingLike
+        startButton.alpha = if (streamingLike) 0.45f else 1f
+        stopButton.alpha = if (streamingLike) 1f else 0.45f
     }
 
     companion object {
@@ -206,6 +217,7 @@ class MainActivity : AppCompatActivity() {
         val dotColorRes: Int,
         val connectionLabelRes: Int,
         val statusLabelRes: Int,
+        val statusTextColorRes: Int,
         val streamingLike: Boolean,
     )
 }

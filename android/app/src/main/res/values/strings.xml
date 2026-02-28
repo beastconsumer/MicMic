@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">MICMIC Mobile</string>
     <string name="title">MICMIC Mobile</string>
-    <string name="subtitle">Microfone do celular no PC com um toque</string>
+    <string name="subtitle">Streaming de voz USB para o MICMIC Desktop</string>
     <string name="status_label">Conexao com PC</string>
     <string name="status_ready">Pronto para iniciar</string>
     <string name="status_recording">Transmitindo para o PC</string>
@@ -16,7 +16,9 @@
     <string name="connection_connecting">Conectando...</string>
     <string name="connection_reconnecting">Reconectando...</string>
     <string name="connection_disconnected">Desconectado</string>
-    <string name="hint">1) Ligue USB + depuracao. 2) No Windows abra o MICMIC e clique START. 3) Quando a bolinha ficar verde, esta conectado.</string>
+    <string name="quick_setup_title">Configuracao Rapida</string>
+    <string name="hint">1) Conecte USB com depuracao ativa.\n2) No Windows abra o MICMIC e clique START.\n3) Toque em Conectar no celular.\n4) Bolinha verde = link ativo.</string>
+    <string name="footer_note">MICMIC 1.0 - pronto para testes finais de publicacao</string>
     <string name="notification_title">MICMIC Mobile</string>
     <string name="notification_text">Transmitindo microfone para o PC</string>
 </resources>

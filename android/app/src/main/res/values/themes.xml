@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MobileMicBridge" parent="Theme.Material3.Dark.NoActionBar" />
+    <style name="Theme.MobileMicBridge" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/brand_primary</item>
+        <item name="colorOnPrimary">@color/bg_root</item>
+        <item name="colorSecondary">@color/brand_secondary</item>
+        <item name="colorSurface">@color/card_surface</item>
+        <item name="colorSurfaceVariant">@color/card_surface_alt</item>
+        <item name="colorOutline">@color/card_border</item>
+        <item name="android:statusBarColor">@color/bg_root</item>
+        <item name="android:navigationBarColor">@color/bg_root</item>
+    </style>
 </resources>
