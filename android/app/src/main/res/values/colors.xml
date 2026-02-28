@@ -2,4 +2,12 @@
 <resources>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
+    <color name="bg_root">#050814</color>
+    <color name="card_surface">#111827</color>
+    <color name="card_surface_alt">#0B1220</color>
+    <color name="card_border">#1E293B</color>
+    <color name="text_muted">#9DB0C8</color>
+    <color name="status_connected">#22C55E</color>
+    <color name="status_connecting">#F59E0B</color>
+    <color name="status_disconnected">#EF4444</color>
 </resources>

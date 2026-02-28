@@ -42,6 +42,7 @@ class MicStreamService : Service() {
 
     private fun startStreaming() {
         if (running.get()) {
+            publishState(STATE_CONNECTED)
             return
         }
 
@@ -49,6 +50,7 @@ class MicStreamService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification())
 
         running.set(true)
+        publishState(STATE_CONNECTING)
         workerThread = Thread(::captureLoop, "mic-stream-thread").also { it.start() }
     }
 
@@ -60,11 +62,13 @@ class MicStreamService : Service() {
         releaseAudioRecord()
 
         stopForeground(STOP_FOREGROUND_REMOVE)
+        publishState(STATE_STOPPED)
         stopSelf()
     }
 
     private fun captureLoop() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            publishState(STATE_PERMISSION_DENIED)
             stopSelf()
             return
         }
@@ -75,6 +79,7 @@ class MicStreamService : Service() {
             AudioFormat.ENCODING_PCM_16BIT,
         )
         if (minBuffer <= 0) {
+            publishState(STATE_ERROR)
             stopSelf()
             return
         }
@@ -90,12 +95,21 @@ class MicStreamService : Service() {
             bufferSize,
         )
 
-        audioRecord?.startRecording()
+        try {
+            audioRecord?.startRecording()
+        } catch (_: IllegalStateException) {
+            publishState(STATE_ERROR)
+            releaseAudioRecord()
+            stopSelf()
+            return
+        }
 
         while (running.get() && !Thread.currentThread().isInterrupted) {
             try {
+                publishState(STATE_CONNECTING)
                 Socket(HOST, PORT).use { socket ->
                     socket.tcpNoDelay = true
+                    publishState(STATE_CONNECTED)
                     BufferedOutputStream(socket.getOutputStream()).use { output ->
                         while (running.get() && !Thread.currentThread().isInterrupted) {
                             val read = audioRecord?.read(readBuffer, 0, readBuffer.size) ?: -1
@@ -110,6 +124,7 @@ class MicStreamService : Service() {
                 }
             } catch (_: IOException) {
                 if (running.get()) {
+                    publishState(STATE_RECONNECTING)
                     try {
                         Thread.sleep(RETRY_DELAY_MS)
                     } catch (_: InterruptedException) {
@@ -121,7 +136,20 @@ class MicStreamService : Service() {
 
         releaseAudioRecord()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        publishState(STATE_STOPPED)
         stopSelf()
+    }
+
+    private fun publishState(state: String) {
+        if (serviceState == state) {
+            return
+        }
+        serviceState = state
+        val intent = Intent(ACTION_STATE_CHANGED).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_STATE, state)
+        }
+        sendBroadcast(intent)
     }
 
     private fun releaseAudioRecord() {
@@ -157,6 +185,20 @@ class MicStreamService : Service() {
     companion object {
         const val ACTION_START = "com.micmic.mobilemic.action.START"
         const val ACTION_STOP = "com.micmic.mobilemic.action.STOP"
+        const val ACTION_STATE_CHANGED = "com.micmic.mobilemic.action.STATE_CHANGED"
+        const val EXTRA_STATE = "state"
+
+        const val STATE_STOPPED = "stopped"
+        const val STATE_CONNECTING = "connecting"
+        const val STATE_CONNECTED = "connected"
+        const val STATE_RECONNECTING = "reconnecting"
+        const val STATE_PERMISSION_DENIED = "permission_denied"
+        const val STATE_ERROR = "error"
+
+        @Volatile
+        private var serviceState: String = STATE_STOPPED
+
+        fun currentState(): String = serviceState
 
         private const val CHANNEL_ID = "mic_stream_channel"
         private const val NOTIFICATION_ID = 2001
