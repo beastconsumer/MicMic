@@ -1,4 +1,8 @@
+import audioop
+import math
 import os
+import struct
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,13 +23,16 @@ except ImportError:  # pragma: no cover
 
 try:
     import comtypes
-    from pycaw.pycaw import AudioUtilities, EDataFlow, ERole, IMMEndpoint
+    from comtypes import CLSCTX_ALL
+    from pycaw.pycaw import AudioUtilities, EDataFlow, ERole, IAudioMeterInformation, IMMEndpoint
 except ImportError:  # pragma: no cover
     comtypes = None
+    CLSCTX_ALL = None
     AudioUtilities = None
     IMMEndpoint = None
     EDataFlow = None
     ERole = None
+    IAudioMeterInformation = None
 
 try:
     import winreg
@@ -36,7 +43,7 @@ APP_TITLE = "MICMIC"
 APP_PACKAGE = "com.micmic.mobilemic"
 ADB_PORT = 28282
 SAMPLE_RATE = 48000
-CHANNELS = 1
+CHANNELS = 2
 BLOCK_SIZE = 2048
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -57,13 +64,19 @@ PREFERRED_CAPTURE_HINTS = (
     "VB-Audio",
 )
 
-COLOR_BG = "#080B13"
-COLOR_CARD = "#111827"
-COLOR_TEXT = "#E5E7EB"
+COLOR_BG = "#05070D"
+COLOR_SURFACE = "#0B1220"
+COLOR_CARD = "#121A2A"
+COLOR_CARD_ALT = "#0E1729"
+COLOR_BORDER = "#1F2A3D"
+COLOR_TEXT = "#E6ECF7"
+COLOR_MUTED = "#93A4BD"
+COLOR_ACCENT = "#3B82F6"
+COLOR_ACCENT_HOVER = "#2563EB"
 COLOR_OK = "#22C55E"
 COLOR_WARN = "#F59E0B"
 COLOR_ERR = "#EF4444"
-COLOR_INFO = "#94A3B8"
+COLOR_INFO = "#60A5FA"
 
 
 class MicBridgeError(RuntimeError):
@@ -190,6 +203,39 @@ def list_output_devices() -> list[OutputDevice]:
     return items
 
 
+def find_input_device_index_by_name(name_hint: str) -> int | None:
+    if sd is None:
+        return None
+    hint = (name_hint or "").strip().lower()
+    if not hint:
+        return None
+
+    best_index = None
+    best_score = -10_000
+    for index, dev in enumerate(sd.query_devices()):
+        if int(dev.get("max_input_channels", 0)) <= 0:
+            continue
+        name = str(dev.get("name", ""))
+        name_lower = name.lower().strip()
+        score = 0
+        if name_lower == hint:
+            score += 200
+        if hint in name_lower:
+            score += 140
+        if name_lower in hint:
+            score += 40
+        if "micmic" in hint and "micmic" in name_lower:
+            score += 120
+        if "cable output" in hint and "cable output" in name_lower:
+            score += 90
+        if "point" in name_lower:
+            score -= 40
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index if best_score > 0 else None
+
+
 def list_capture_devices() -> list[CaptureDevice]:
     if AudioUtilities is None or IMMEndpoint is None or EDataFlow is None:
         raise MicBridgeError("Dependencia pycaw/comtypes ausente.")
@@ -272,6 +318,83 @@ def try_rename_capture_device_to_micmic(device: CaptureDevice) -> tuple[bool, st
         return False, f"Falha ao renomear no registro: {exc}"
 
 
+def _find_pycaw_capture_endpoint_by_name(capture_name: str):
+    if AudioUtilities is None or IMMEndpoint is None or EDataFlow is None:
+        return None
+    with com_scope():
+        for dev in AudioUtilities.GetAllDevices():
+            try:
+                flow = dev._dev.QueryInterface(IMMEndpoint).GetDataFlow()
+            except Exception:
+                continue
+            if flow != EDataFlow.eCapture.value:
+                continue
+            if (dev.FriendlyName or "").strip().lower() == capture_name.strip().lower():
+                return dev
+    return None
+
+
+def measure_virtual_route_peak(output_device: OutputDevice, capture_device: CaptureDevice) -> float:
+    if sd is None or IAudioMeterInformation is None or CLSCTX_ALL is None:
+        return 0.0
+
+    endpoint = _find_pycaw_capture_endpoint_by_name(capture_device.name)
+    if endpoint is None:
+        return 0.0
+
+    with com_scope():
+        iface = endpoint._dev.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
+        meter = iface.QueryInterface(IAudioMeterInformation)
+
+        sample_rate = int(float(sd.query_devices(output_device.index).get("default_samplerate", 48000)))
+        if sample_rate <= 0:
+            sample_rate = 48000
+
+        freq = 440.0
+        step = (2.0 * math.pi * freq) / sample_rate
+        phase = 0.0
+        peak = 0.0
+
+        with sd.RawOutputStream(
+            samplerate=sample_rate,
+            channels=2,
+            dtype="int16",
+            device=output_device.index,
+            blocksize=1024,
+        ) as out_stream:
+            start = time.time()
+            while time.time() - start < 1.5:
+                buffer = bytearray()
+                for _ in range(1024):
+                    value = int(9000 * math.sin(phase))
+                    phase += step
+                    if phase > 2.0 * math.pi:
+                        phase -= 2.0 * math.pi
+                    buffer += struct.pack("<hh", value, value)
+                out_stream.write(bytes(buffer))
+                current_peak = float(meter.GetPeakValue())
+                if current_peak > peak:
+                    peak = current_peak
+        return peak
+
+
+def read_capture_peak(capture_device: CaptureDevice | None) -> float:
+    if capture_device is None:
+        return 0.0
+    if IAudioMeterInformation is None or CLSCTX_ALL is None:
+        return 0.0
+
+    endpoint = _find_pycaw_capture_endpoint_by_name(capture_device.name)
+    if endpoint is None:
+        return 0.0
+
+    with com_scope():
+        iface = endpoint._dev.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
+        meter = iface.QueryInterface(IAudioMeterInformation)
+        peak = float(meter.GetPeakValue())
+    return max(0.0, min(1.0, peak))
+
+
 class AudioRelay:
     def __init__(self, output_device_index: int, output_device_name: str, status_cb):
         self.output_device_index = output_device_index
@@ -343,7 +466,7 @@ class AudioRelay:
                 if len(chunk) % 2:
                     chunk = chunk[:-1]
                 if chunk:
-                    self._stream.write(chunk)
+                    self._stream.write(audioop.tostereo(chunk, 2, 1, 1))
         except Exception as exc:  # pragma: no cover
             self.status_cb(f"Erro no relay: {exc}", "error")
         finally:
@@ -372,8 +495,8 @@ class MicMicApp(ctk.CTk):
         super().__init__()
 
         self.title(APP_TITLE)
-        self.geometry("620x520")
-        self.minsize(560, 470)
+        self.geometry("790x640")
+        self.minsize(730, 560)
         self.configure(fg_color=COLOR_BG)
 
         self._adb = None
@@ -387,82 +510,372 @@ class MicMicApp(ctk.CTk):
         self.status_phone = tk.StringVar(value="Aguardando...")
         self.status_mic = tk.StringVar(value="Aguardando...")
         self.status_stream = tk.StringVar(value="Parado")
+        self.status_meter_percent = tk.StringVar(value="0%")
+        self.status_meter_state = tk.StringVar(value="Silencio")
+        self.status_meter_db = tk.StringVar(value="-60 dB")
+        self.status_meter_source = tk.StringVar(value="Entrada: Aguardando...")
+        self.status_header = tk.StringVar(value="PRONTO")
+        self._meter_job = None
+        self._meter_value = 0.0
+        self._meter_stream = None
+        self._meter_stream_name = None
+        self._meter_live_peak = 0.0
+        self._meter_lock = threading.Lock()
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(200, self.refresh_async)
+        self.after(350, self._poll_meter)
 
     def _build_ui(self):
-        ctk.CTkLabel(self, text="MICMIC", font=ctk.CTkFont(size=34, weight="bold"), text_color=COLOR_TEXT).pack(
-            pady=(16, 2)
+        main = ctk.CTkFrame(self, fg_color="transparent")
+        main.pack(fill="both", expand=True, padx=18, pady=18)
+
+        header = ctk.CTkFrame(
+            main,
+            fg_color=COLOR_SURFACE,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=16,
         )
+        header.pack(fill="x")
+        header.grid_columnconfigure(1, weight=1)
+
         ctk.CTkLabel(
-            self,
-            text="Clique em START e use no Discord.",
-            text_color="#94A3B8",
-            font=ctk.CTkFont(size=14),
-        ).pack(pady=(0, 10))
+            header,
+            text="MM",
+            width=56,
+            height=56,
+            corner_radius=28,
+            fg_color=COLOR_ACCENT,
+            text_color="#F8FAFC",
+            font=ctk.CTkFont(family="Bahnschrift", size=22, weight="bold"),
+        ).grid(row=0, column=0, padx=(14, 12), pady=14)
 
-        card = ctk.CTkFrame(self, fg_color=COLOR_CARD, corner_radius=14)
-        card.pack(fill="x", padx=16, pady=(0, 10))
+        title_wrap = ctk.CTkFrame(header, fg_color="transparent")
+        title_wrap.grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(
+            title_wrap,
+            text="MICMIC",
+            font=ctk.CTkFont(family="Bahnschrift", size=33, weight="bold"),
+            text_color=COLOR_TEXT,
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            title_wrap,
+            text="Microfone do celular no Windows com roteamento automatico.",
+            font=ctk.CTkFont(size=13),
+            text_color=COLOR_MUTED,
+        ).pack(anchor="w", pady=(1, 0))
 
-        self._status_line(card, "Celular USB", self.status_phone).pack(fill="x", padx=12, pady=(10, 4))
-        self._status_line(card, "Microfone", self.status_mic).pack(fill="x", padx=12, pady=4)
-        self._status_line(card, "Stream", self.status_stream).pack(fill="x", padx=12, pady=(4, 10))
-
-        self.discord_hint = ctk.CTkLabel(
-            self,
-            text="Discord: se MICMIC nao aparecer, use 'Default'.",
-            text_color="#93C5FD",
+        self.header_badge = ctk.CTkLabel(
+            header,
+            textvariable=self.status_header,
+            width=96,
+            height=34,
+            corner_radius=17,
+            fg_color="#1E293B",
+            text_color=COLOR_TEXT,
             font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self.discord_hint.pack(pady=(2, 8))
+        self.header_badge.grid(row=0, column=2, padx=(10, 14), pady=14, sticky="e")
 
-        actions = ctk.CTkFrame(self, fg_color="transparent")
-        actions.pack(fill="x", padx=16, pady=(0, 10))
+        body = ctk.CTkFrame(main, fg_color="transparent")
+        body.pack(fill="x", pady=(12, 10))
+        body.grid_columnconfigure(0, weight=3)
+        body.grid_columnconfigure(1, weight=2)
+
+        card = ctk.CTkFrame(
+            body,
+            fg_color=COLOR_CARD,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=14,
+        )
+        card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        self._status_line(card, "Celular USB", self.status_phone).pack(fill="x", padx=12, pady=(12, 5))
+        self._status_line(card, "Microfone", self.status_mic).pack(fill="x", padx=12, pady=5)
+        self._status_line(card, "Stream", self.status_stream).pack(fill="x", padx=12, pady=(5, 8))
+
+        self.discord_hint = ctk.CTkLabel(
+            card,
+            text="Discord: selecione MICMIC (ou Default).",
+            text_color=COLOR_INFO,
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        self.discord_hint.pack(anchor="w", padx=14, pady=(0, 12))
+
+        meter_card = ctk.CTkFrame(
+            body,
+            fg_color=COLOR_CARD,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=14,
+        )
+        meter_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        ctk.CTkLabel(
+            meter_card,
+            text="Medidor de Voz",
+            text_color=COLOR_TEXT,
+            font=ctk.CTkFont(size=17, weight="bold"),
+        ).pack(anchor="w", padx=14, pady=(12, 3))
+        ctk.CTkLabel(
+            meter_card,
+            textvariable=self.status_meter_source,
+            text_color=COLOR_MUTED,
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        self.voice_meter_bar = ctk.CTkProgressBar(
+            meter_card,
+            height=24,
+            corner_radius=12,
+            fg_color="#1F2937",
+            progress_color=COLOR_OK,
+            border_width=1,
+            border_color="#334155",
+        )
+        self.voice_meter_bar.pack(fill="x", padx=14)
+        self.voice_meter_bar.set(0.0)
+
+        meter_stats = ctk.CTkFrame(meter_card, fg_color="transparent")
+        meter_stats.pack(fill="x", padx=14, pady=(10, 12))
+        meter_stats.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            meter_stats,
+            textvariable=self.status_meter_percent,
+            text_color=COLOR_TEXT,
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
+        self.voice_meter_state_label = ctk.CTkLabel(
+            meter_stats,
+            textvariable=self.status_meter_state,
+            text_color=COLOR_OK,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        self.voice_meter_state_label.grid(row=0, column=1, sticky="e")
+        ctk.CTkLabel(
+            meter_stats,
+            textvariable=self.status_meter_db,
+            text_color=COLOR_MUTED,
+            font=ctk.CTkFont(size=12),
+        ).grid(row=1, column=0, columnspan=2, sticky="w")
+
+        actions = ctk.CTkFrame(
+            main,
+            fg_color=COLOR_SURFACE,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=14,
+        )
+        actions.pack(fill="x", pady=(0, 10))
         actions.grid_columnconfigure(0, weight=1)
         actions.grid_columnconfigure(1, weight=1)
         actions.grid_columnconfigure(2, weight=1)
 
-        self.btn_refresh = ctk.CTkButton(actions, text="Atualizar", command=self.refresh_async, height=45)
-        self.btn_refresh.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.btn_refresh = ctk.CTkButton(
+            actions,
+            text="Atualizar",
+            command=self.refresh_async,
+            height=46,
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_ACCENT_HOVER,
+            text_color="#F8FAFC",
+            font=ctk.CTkFont(size=15, weight="bold"),
+        )
+        self.btn_refresh.grid(row=0, column=0, sticky="ew", padx=(12, 6), pady=12)
 
         self.btn_start = ctk.CTkButton(
             actions,
             text="START",
             command=self.start_async,
-            height=45,
-            fg_color="#22C55E",
+            height=46,
+            fg_color=COLOR_OK,
             hover_color="#16A34A",
-            text_color="#05270f",
+            text_color="#05270F",
             font=ctk.CTkFont(size=16, weight="bold"),
         )
-        self.btn_start.grid(row=0, column=1, sticky="ew", padx=6)
+        self.btn_start.grid(row=0, column=1, sticky="ew", padx=6, pady=12)
 
         self.btn_stop = ctk.CTkButton(
             actions,
             text="STOP",
             command=self.stop_async,
-            height=45,
-            fg_color="#EF4444",
+            height=46,
+            fg_color=COLOR_ERR,
             hover_color="#DC2626",
+            text_color="#F8FAFC",
             font=ctk.CTkFont(size=16, weight="bold"),
             state="disabled",
         )
-        self.btn_stop.grid(row=0, column=2, sticky="ew", padx=(6, 0))
+        self.btn_stop.grid(row=0, column=2, sticky="ew", padx=(6, 12), pady=12)
 
-        self.log_box = ctk.CTkTextbox(self, height=230, fg_color="#020617", text_color=COLOR_TEXT)
-        self.log_box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        log_card = ctk.CTkFrame(
+            main,
+            fg_color=COLOR_SURFACE,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=14,
+        )
+        log_card.pack(fill="both", expand=True)
+        ctk.CTkLabel(
+            log_card,
+            text="Eventos",
+            text_color=COLOR_TEXT,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(anchor="w", padx=14, pady=(10, 6))
+
+        self.log_box = ctk.CTkTextbox(
+            log_card,
+            height=230,
+            fg_color="#081123",
+            text_color=COLOR_TEXT,
+            border_width=1,
+            border_color="#2A3A52",
+            corner_radius=10,
+        )
+        self.log_box.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         self.log_box.configure(state="disabled")
 
     def _status_line(self, parent, title: str, var: tk.StringVar):
-        row = ctk.CTkFrame(parent, fg_color="#0B1220", corner_radius=10)
-        ctk.CTkLabel(row, text=title, width=120, anchor="w", text_color="#CBD5E1").pack(side="left", padx=(10, 6), pady=8)
-        ctk.CTkLabel(row, textvariable=var, anchor="w", text_color=COLOR_TEXT).pack(side="left", fill="x", expand=True, padx=(0, 10), pady=8)
+        row = ctk.CTkFrame(
+            parent,
+            fg_color=COLOR_CARD_ALT,
+            border_width=1,
+            border_color=COLOR_BORDER,
+            corner_radius=10,
+        )
+        ctk.CTkLabel(
+            row,
+            text=title,
+            width=120,
+            anchor="w",
+            text_color=COLOR_MUTED,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left", padx=(10, 8), pady=9)
+        ctk.CTkLabel(
+            row,
+            textvariable=var,
+            anchor="w",
+            text_color=COLOR_TEXT,
+            font=ctk.CTkFont(size=13),
+        ).pack(side="left", fill="x", expand=True, padx=(0, 10), pady=9)
         return row
 
+    def _set_header_badge(self, text: str, color: str):
+        def _apply():
+            self.status_header.set(text)
+            self.header_badge.configure(fg_color=color)
+        self._ui(_apply)
+
+    def _close_meter_stream(self):
+        if self._meter_stream:
+            try:
+                self._meter_stream.stop()
+            except Exception:
+                pass
+            try:
+                self._meter_stream.close()
+            except Exception:
+                pass
+        self._meter_stream = None
+        self._meter_stream_name = None
+        with self._meter_lock:
+            self._meter_live_peak = 0.0
+
+    def _meter_callback(self, indata, _frames, _time_info, _status):
+        try:
+            if not indata:
+                return
+            # Use the max absolute sample from the current block for fast response.
+            peak = float(audioop.max(indata, 2)) / 32768.0
+        except Exception:
+            peak = 0.0
+        peak = max(0.0, min(1.0, peak))
+        with self._meter_lock:
+            if peak > self._meter_live_peak:
+                self._meter_live_peak = peak
+
+    def _ensure_meter_stream(self):
+        if sd is None or not self.capture_device:
+            self._close_meter_stream()
+            return
+
+        capture_name = (self.capture_device.name or "").strip()
+        if not capture_name:
+            self._close_meter_stream()
+            return
+
+        if self._meter_stream and self._meter_stream_name == capture_name:
+            return
+
+        self._close_meter_stream()
+        index = find_input_device_index_by_name(capture_name)
+        if index is None:
+            return
+
+        try:
+            dev_info = sd.query_devices(index)
+            channels = int(dev_info.get("max_input_channels", 1))
+            channels = 1 if channels < 1 else min(2, channels)
+            sample_rate = int(float(dev_info.get("default_samplerate", SAMPLE_RATE)))
+            if sample_rate <= 0:
+                sample_rate = SAMPLE_RATE
+
+            self._meter_stream = sd.RawInputStream(
+                samplerate=sample_rate,
+                channels=channels,
+                dtype="int16",
+                device=index,
+                blocksize=1024,
+                callback=self._meter_callback,
+            )
+            self._meter_stream.start()
+            self._meter_stream_name = capture_name
+        except Exception:
+            self._close_meter_stream()
+
+    def _apply_meter_level(self, peak: float):
+        peak = max(0.0, min(1.0, float(peak)))
+        if peak >= self._meter_value:
+            self._meter_value = peak
+        else:
+            self._meter_value = (self._meter_value * 0.82) + (peak * 0.18)
+        level = max(0.0, min(1.0, self._meter_value))
+
+        if level >= 0.65:
+            meter_color = COLOR_ERR
+            meter_state = "Forte"
+        elif level >= 0.22:
+            meter_color = COLOR_WARN
+            meter_state = "Falando"
+        else:
+            meter_color = COLOR_OK
+            meter_state = "Silencio"
+
+        percent = int(level * 100)
+        db_value = int(20 * math.log10(max(level, 0.001)))
+
+        self.status_meter_percent.set(f"{percent}%")
+        self.status_meter_state.set(meter_state)
+        self.status_meter_db.set(f"{db_value} dB")
+        self.voice_meter_bar.configure(progress_color=meter_color)
+        self.voice_meter_bar.set(level)
+        self.voice_meter_state_label.configure(text_color=meter_color)
+
+    def _poll_meter(self):
+        self._ensure_meter_stream()
+        with self._meter_lock:
+            peak = self._meter_live_peak
+            self._meter_live_peak *= 0.45
+        self._apply_meter_level(peak)
+        self._meter_job = self.after(95, self._poll_meter)
+
     def _ui(self, fn):
-        self.after(0, fn)
+        try:
+            self.after(0, fn)
+        except (RuntimeError, tk.TclError):
+            pass
 
     def log(self, text: str):
         stamp = datetime.now().strftime("%H:%M:%S")
@@ -484,8 +897,16 @@ class MicMicApp(ctk.CTk):
             self._ui(lambda: self.status_phone.set(phone))
         if mic is not None:
             self._ui(lambda: self.status_mic.set(mic))
+            self._ui(lambda: self.status_meter_source.set(f"Entrada: {mic}"))
         if stream is not None:
             self._ui(lambda: self.status_stream.set(stream))
+            stream_lower = stream.lower()
+            if "transmit" in stream_lower:
+                self._set_header_badge("AO VIVO", "#14532D")
+            elif "erro" in stream_lower:
+                self._set_header_badge("ERRO", "#7F1D1D")
+            else:
+                self._set_header_badge("PRONTO", "#1E293B")
 
     def refresh_async(self):
         if self._busy:
@@ -551,6 +972,14 @@ class MicMicApp(ctk.CTk):
             set_default_capture_device(self.capture_device)
             self.log(f"Microfone padrao do Windows: {self.capture_device.name}")
 
+            route_peak = measure_virtual_route_peak(self.output_device, self.capture_device)
+            self.log(f"Teste da rota virtual (peak): {route_peak:.4f}")
+            if route_peak < 0.005:
+                raise MicBridgeError(
+                    "Sem sinal no mic virtual. Driver virtual sem roteamento. "
+                    "Use VB-CABLE (CABLE Input/Output) ou reinstale o driver MICMIC/AudioRelay."
+                )
+
             self._relay = AudioRelay(self.output_device.index, self.output_device.name, self._relay_status)
             self._relay.start()
 
@@ -611,6 +1040,13 @@ class MicMicApp(ctk.CTk):
             self._relay = None
 
     def on_close(self):
+        if self._meter_job is not None:
+            try:
+                self.after_cancel(self._meter_job)
+            except Exception:
+                pass
+            self._meter_job = None
+        self._close_meter_stream()
         if self._running:
             self._safe_stop()
         self.destroy()
