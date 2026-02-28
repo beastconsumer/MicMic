@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+desktop/mic_bridge_config.json
+
+# Android/Gradle
+.gradle/
+local.properties
+**/build/
+
+# Logs
+*.log
